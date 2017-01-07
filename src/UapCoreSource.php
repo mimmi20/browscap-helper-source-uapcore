@@ -84,7 +84,7 @@ class UapCoreSource implements SourceInterface
      */
     private function loadFromPath(OutputInterface $output = null)
     {
-        $path = 'vendor/browscap/browscap/tests/fixtures/issues';
+        $path = 'vendor/thadafinser/uap-core/tests';
 
         if (!file_exists($path)) {
             return;
