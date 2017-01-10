@@ -6,6 +6,7 @@
     "mimmi20/browscap-helper-source": "^1.0",
     "monolog/monolog": "^1.20",
     "symfony/console": "^3.0",
+    "symfony/yaml": "^3.0",
     "ua-parser/uap-php": "dev-master",
     "thadafinser/uap-core": "^0.5"
   },
