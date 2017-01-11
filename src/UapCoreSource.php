@@ -22,29 +22,35 @@ class UapCoreSource implements SourceInterface
      */
     public function getUserAgents(Logger $logger, OutputInterface $output, $limit = 0)
     {
+        $counter   = 0;
         $allAgents = [];
 
-        foreach ($this->loadFromPath($output) as $dataFile) {
-            if ($limit && count($allAgents) >= $limit) {
-                break;
+        foreach ($this->loadFromPath($output) as $data) {
+            if ($limit && $counter >= $limit) {
+                return;
             }
 
-            $agentsFromFile = $this->mapUapCore($dataFile);
-
-            $output->writeln(' [added ' . str_pad(number_format(count($allAgents)), 12, ' ', STR_PAD_LEFT) . ' agent' . (count($allAgents) !== 1 ? 's' : '') . ' so far]');
-
-            $newAgents = array_diff($agentsFromFile, $allAgents);
-            $allAgents = array_merge($allAgents, $newAgents);
-        }
-
-        $i = 0;
-        foreach ($allAgents as $agent) {
-            if ($limit && $i >= $limit) {
-                return null;
+            if (empty($data['test_cases'])) {
+                continue;
             }
 
-            ++$i;
-            yield $agent;
+            foreach ($data['test_cases'] as $row) {
+                if ($limit && $counter >= $limit) {
+                    return;
+                }
+
+                if (empty($row['user_agent_string'])) {
+                    continue;
+                }
+
+                if (array_key_exists($row['user_agent_string'], $allAgents)) {
+                    continue;
+                }
+
+                yield $row['user_agent_string'];
+                $allAgents[$row['user_agent_string']] = 1;
+                ++$counter;
+            }
         }
     }
 
@@ -58,22 +64,51 @@ class UapCoreSource implements SourceInterface
     {
         $allTests = [];
 
-        foreach ($this->loadFromPath($output) as $dataFile) {
-            $agentsFromFile = $this->mapUapCore($dataFile);
+        foreach ($this->loadFromPath($output) as $data) {
+            if (empty($data['test_cases'])) {
+                continue;
+            }
 
-            foreach ($agentsFromFile as $ua) {
-                if (array_key_exists($ua, $allTests)) {
+            foreach ($data['test_cases'] as $row) {
+                if (empty($row['user_agent_string'])) {
                     continue;
                 }
 
-                $allTests[$ua] = [];
-            }
-        }
+                if (array_key_exists($row['user_agent_string'], $allTests)) {
+                    continue;
+                }
 
-        $i = 0;
-        foreach ($allTests as $ua => $test) {
-            ++$i;
-            yield [$ua => $test];
+                $test = [
+                    'ua'         => $row['user_agent_string'],
+                    'properties' => [
+                        'Browser_Name'            => null,
+                        'Browser_Type'            => null,
+                        'Browser_Bits'            => null,
+                        'Browser_Maker'           => null,
+                        'Browser_Modus'           => null,
+                        'Browser_Version'         => null,
+                        'Platform_Codename'       => null,
+                        'Platform_Marketingname'  => null,
+                        'Platform_Version'        => null,
+                        'Platform_Bits'           => null,
+                        'Platform_Maker'          => null,
+                        'Platform_Brand_Name'     => null,
+                        'Device_Name'             => null,
+                        'Device_Maker'            => null,
+                        'Device_Type'             => null,
+                        'Device_Pointing_Method'  => null,
+                        'Device_Dual_Orientation' => null,
+                        'Device_Code_Name'        => null,
+                        'Device_Brand_Name'       => null,
+                        'RenderingEngine_Name'    => null,
+                        'RenderingEngine_Version' => null,
+                        'RenderingEngine_Maker'   => null,
+                    ],
+                ];
+
+                yield [$row['user_agent_string'] => $test];
+                $allTests[$ua] = 1;
+            }
         }
     }
 
@@ -112,29 +147,5 @@ class UapCoreSource implements SourceInterface
                     break;
             }
         }
-    }
-
-    /**
-     * @param array $data
-     *
-     * @return array
-     */
-    private function mapUapCore(array $data)
-    {
-        if (empty($data['test_cases'])) {
-            return [];
-        }
-
-        $allData = [];
-
-        foreach ($data['test_cases'] as $row) {
-            if (empty($row['user_agent_string'])) {
-                continue;
-            }
-
-            $allData[] = $row['user_agent_string'];
-        }
-
-        return $allData;
     }
 }
