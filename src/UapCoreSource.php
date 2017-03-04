@@ -12,7 +12,7 @@ declare(strict_types = 1);
 namespace BrowscapHelper\Source;
 
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Yaml\Yaml;
 use UaResult\Browser\Browser;
 use UaResult\Device\Device;
@@ -29,23 +29,16 @@ use Wurfl\Request\GenericRequestFactory;
 class UapCoreSource implements SourceInterface
 {
     /**
-     * @var \Symfony\Component\Console\Output\OutputInterface
-     */
-    private $output = null;
-
-    /**
      * @var \Psr\Log\LoggerInterface
      */
     private $logger = null;
 
     /**
-     * @param \Psr\Log\LoggerInterface                          $logger
-     * @param \Symfony\Component\Console\Output\OutputInterface $output
+     * @param \Psr\Log\LoggerInterface $logger
      */
-    public function __construct(LoggerInterface $logger, OutputInterface $output)
+    public function __construct(LoggerInterface $logger)
     {
         $this->logger = $logger;
-        $this->output = $output;
     }
 
     /**
@@ -55,35 +48,15 @@ class UapCoreSource implements SourceInterface
      */
     public function getUserAgents($limit = 0)
     {
-        $counter   = 0;
-        $allAgents = [];
+        $counter = 0;
 
-        foreach ($this->loadFromPath() as $data) {
+        foreach ($this->loadFromPath() as $row) {
             if ($limit && $counter >= $limit) {
                 return;
             }
 
-            if (empty($data['test_cases'])) {
-                continue;
-            }
-
-            foreach ($data['test_cases'] as $row) {
-                if ($limit && $counter >= $limit) {
-                    return;
-                }
-
-                if (empty($row['user_agent_string'])) {
-                    continue;
-                }
-
-                if (array_key_exists($row['user_agent_string'], $allAgents)) {
-                    continue;
-                }
-
-                yield $row['user_agent_string'];
-                $allAgents[$row['user_agent_string']] = 1;
-                ++$counter;
-            }
+            yield trim($row['user_agent_string']);
+            ++$counter;
         }
     }
 
@@ -92,36 +65,19 @@ class UapCoreSource implements SourceInterface
      */
     public function getTests()
     {
-        $allTests = [];
+        foreach ($this->loadFromPath() as $row) {
+            $request  = (new GenericRequestFactory())->createRequestForUserAgent($row['user_agent_string']);
+            $browser  = new Browser(null);
+            $device   = new Device(null, null);
+            $platform = new Os(null, null);
+            $engine   = new Engine(null);
 
-        foreach ($this->loadFromPath() as $data) {
-            if (empty($data['test_cases'])) {
-                continue;
-            }
-
-            foreach ($data['test_cases'] as $row) {
-                if (empty($row['user_agent_string'])) {
-                    continue;
-                }
-
-                if (array_key_exists($row['user_agent_string'], $allTests)) {
-                    continue;
-                }
-
-                $request  = (new GenericRequestFactory())->createRequestForUserAgent($row['user_agent_string']);
-                $browser  = new Browser(null);
-                $device   = new Device(null, null);
-                $platform = new Os(null, null);
-                $engine   = new Engine(null);
-
-                yield $row['user_agent_string'] => new Result($request, $device, $platform, $browser, $engine);
-                $allTests[$row['user_agent_string']] = 1;
-            }
+            yield trim($row['user_agent_string']) => new Result($request, $device, $platform, $browser, $engine);
         }
     }
 
     /**
-     * @return \Generator
+     * @return array[]
      */
     private function loadFromPath()
     {
@@ -131,26 +87,54 @@ class UapCoreSource implements SourceInterface
             return;
         }
 
-        $this->output->writeln('    reading path ' . $path);
+        $this->logger->info('    reading path ' . $path);
 
-        $iterator = new \RecursiveDirectoryIterator($path);
+        $allTests = [];
+        $finder   = new Finder();
+        $finder->files();
+        $finder->name('*.yaml');
+        $finder->ignoreDotFiles(true);
+        $finder->ignoreVCS(true);
+        $finder->sortByName();
+        $finder->ignoreUnreadableDirs();
+        $finder->in($path);
 
-        foreach (new \RecursiveIteratorIterator($iterator) as $file) {
-            /** @var $file \SplFileInfo */
+        foreach ($finder as $file) {
+            /** @var \Symfony\Component\Finder\SplFileInfo $file */
             if (!$file->isFile()) {
+                continue;
+            }
+
+            if ('yaml' !== $file->getExtension()) {
                 continue;
             }
 
             $filepath = $file->getPathname();
 
-            $this->output->writeln('    reading file ' . str_pad($filepath, 100, ' ', STR_PAD_RIGHT));
-            switch ($file->getExtension()) {
-                case 'yaml':
-                    yield Yaml::parse(file_get_contents($filepath));
-                    break;
-                default:
-                    // do nothing here
-                    break;
+            $this->logger->info('    reading file ' . str_pad($filepath, 100, ' ', STR_PAD_RIGHT));
+            $data = Yaml::parse(file_get_contents($filepath));
+
+            if (!is_array($data)) {
+                continue;
+            }
+
+            if (empty($data['test_cases']) || !is_array($data['test_cases'])) {
+                continue;
+            }
+
+            foreach ($data['test_cases'] as $row) {
+                if (empty($row['user_agent_string'])) {
+                    continue;
+                }
+
+                $agent = trim($row['user_agent_string']);
+
+                if (array_key_exists($agent, $allTests)) {
+                    continue;
+                }
+
+                yield $row;
+                $allTests[$agent] = 1;
             }
         }
     }
